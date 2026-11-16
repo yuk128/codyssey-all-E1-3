@@ -1,6 +1,7 @@
 """Mini NPU Simulator
 - 모드 1: 3x3 필터 2개(A, B)와 패턴을 직접 입력받아 MAC 점수로 판정
 - 모드 2: data.json의 필터/패턴을 일괄 분석하고 expected와 비교(PASS/FAIL)
+- 보너스 3: 2차원 vs 1차원(평탄화) MAC 성능 비교 / 보너스 4: N x N 패턴 생성기
 - 외부 라이브러리 없이 표준 라이브러리(json, time, os, re)만 사용
 """
 import json
@@ -47,18 +48,37 @@ def judge(score_a, score_b, label_a, label_b, undecided):
     return label_a if score_a > score_b else label_b
 
 
-def measure_ms(pattern, filt, repeat=REPEAT):
-    """mac()을 repeat번 호출한 평균 시간(ms). 입출력은 측정 구간 밖."""
+def measure_ms(pattern, filt, repeat=REPEAT, fn=mac):
+    """fn(기본 mac)을 repeat번 호출한 평균 시간(ms). 입출력은 측정 구간 밖."""
     start = time.perf_counter()
     for _ in range(repeat):
-        mac(pattern, filt)
+        fn(pattern, filt)
     end = time.perf_counter()
     return (end - start) / repeat * 1000
 
 
-def make_dummy(n):
-    """성능 측정용 N x N 더미 행렬 (전부 1.0)."""
-    return [[1.0] * n for _ in range(n)]
+def make_cross(n):
+    """[보너스] N x N 십자가 패턴: 가운데 행과 가운데 열을 1.0으로 채운다. (홀수 N 권장)"""
+    mid = n // 2
+    return [[1.0 if (i == mid or j == mid) else 0.0 for j in range(n)] for i in range(n)]
+
+
+def make_x(n):
+    """[보너스] N x N X 패턴: 두 대각선을 1.0으로 채운다."""
+    return [[1.0 if (i == j or i + j == n - 1) else 0.0 for j in range(n)] for i in range(n)]
+
+
+def flatten(m):
+    """[보너스] N x N 2차원 배열 -> 길이 N^2 의 1차원 배열 (칸 (i, j) -> 인덱스 i*N + j)."""
+    return [v for row in m for v in row]
+
+
+def mac_flat(pattern_flat, filter_flat):
+    """[보너스] 1차원 배열 버전 MAC: 이중 루프 대신 단일 루프로 접근한다."""
+    total = 0.0
+    for k in range(len(pattern_flat)):
+        total += pattern_flat[k] * filter_flat[k]
+    return total
 
 
 # ------------------------------------------------------------
@@ -100,24 +120,30 @@ def run_mode1():
     print("#----------------------------------------")
     pattern = read_matrix("패턴")
 
-    score_a = mac(pattern, filter_a)
-    score_b = mac(pattern, filter_b)
-    # 성능: A 필터와의 MAC 1회를 10번 반복한 평균
-    avg_ms = measure_ms(pattern, filter_a)
-    result = judge(score_a, score_b, "A", "B", f"판정 불가 (|A-B| < {EPSILON:g})")
+    show_mac_result(pattern, filter_a, filter_b, "A", "B",
+                    f"판정 불가 (|A-B| < {EPSILON:g})")
+
+
+def show_mac_result(pattern, filt_a, filt_b, label_a, label_b, undecided):
+    """MAC 점수 / 연산 시간 / 판정 / 성능 표를 출력한다. (모드 1과 패턴 생성기가 함께 사용)"""
+    n = len(pattern)
+    score_a = mac(pattern, filt_a)
+    score_b = mac(pattern, filt_b)
+    avg_ms = measure_ms(pattern, filt_a)       # 10회 평균
+    result = judge(score_a, score_b, label_a, label_b, undecided)
 
     print("\n#----------------------------------------")
     print("# [3] MAC 결과")
     print("#----------------------------------------")
-    print(f"A 점수: {score_a}")
-    print(f"B 점수: {score_b}")
+    print(f"{label_a} 점수: {score_a}")
+    print(f"{label_b} 점수: {score_b}")
     print(f"연산 시간(평균/{REPEAT}회): {avg_ms:.4f} ms")
     print(f"판정: {result}")
 
     print("\n#----------------------------------------")
-    print("# [4] 성능 분석 (3x3)")
+    print(f"# [4] 성능 분석 ({n}x{n})")
     print("#----------------------------------------")
-    print_perf_table([3])
+    print_perf_table([n])
 
 
 # ------------------------------------------------------------
@@ -253,9 +279,62 @@ def print_perf_table(sizes):
     print(f"{'크기':<10}{'평균 시간(ms)':<16}{'연산 횟수(N²)':<10}")
     print("-" * 38)
     for n in sizes:
-        p, f = make_dummy(n), make_dummy(n)
+        p, f = make_cross(n), make_x(n)
         avg = measure_ms(p, f)
         print(f"{f'{n}x{n}':<10}{avg:<16.6f}{n * n:<10}")
+
+
+# ------------------------------------------------------------
+# 보너스
+# ------------------------------------------------------------
+def run_bonus_compare():
+    """[보너스 3] 2차원 mac vs 1차원 mac_flat: 동일 입력, 동일 반복 횟수(10회 평균)로 비교."""
+    print("\n#----------------------------------------")
+    print(f"# [보너스] 2차원 vs 1차원 배열 MAC 성능 비교 (평균/{REPEAT}회)")
+    print("#----------------------------------------")
+    print(f"{'크기':<10}{'2차원(ms)':<14}{'1차원(ms)':<14}{'개선(배)':<10}{'점수 일치'}")
+    print("-" * 56)
+    for n in PERF_SIZES:
+        p2, f2 = make_cross(n), make_x(n)           # 동일 입력
+        p1, f1 = flatten(p2), flatten(f2)           # 평탄화는 측정 구간 밖
+        same = abs(mac(p2, f2) - mac_flat(p1, f1)) < EPSILON
+        t2 = measure_ms(p2, f2, REPEAT, mac)
+        t1 = measure_ms(p1, f1, REPEAT, mac_flat)
+        ratio = t2 / t1 if t1 > 0 else float("inf")
+        print(f"{f'{n}x{n}':<10}{t2:<14.6f}{t1:<14.6f}{ratio:<10.2f}{'OK' if same else 'NG'}")
+
+
+def read_int(prompt, low=1, high=99):
+    while True:
+        raw = input(prompt).strip()
+        try:
+            v = int(raw)
+        except ValueError:
+            print("정수를 입력하세요.")
+            continue
+        if low <= v <= high:
+            return v
+        print(f"{low} 이상 {high} 이하의 정수를 입력하세요.")
+
+
+def print_grid(m):
+    for row in m:
+        print(" ".join(str(int(v)) for v in row))
+
+
+def run_bonus_generator():
+    """[보너스 4] N을 입력하면 Cross/X 패턴을 생성하고, 생성된 패턴을 MAC 판정에 재활용한다."""
+    n = read_int("패턴 크기 N 입력 (1~99, 홀수 권장): ")
+    cross, x = make_cross(n), make_x(n)
+    print(f"\n[생성된 Cross {n}x{n}]")
+    print_grid(cross)
+    print(f"\n[생성된 X {n}x{n}]")
+    print_grid(x)
+
+    pick = read_int("\n판정에 사용할 패턴 선택 (1: Cross, 2: X): ", 1, 2)
+    pattern = cross if pick == 1 else x
+    print(f"\n→ 필터 A=Cross, 필터 B=X 로 {'Cross' if pick == 1 else 'X'} 패턴을 판정합니다.")
+    show_mac_result(pattern, cross, x, "Cross", "X", f"판정 불가 (|차이| < {EPSILON:g})")
 
 
 # ------------------------------------------------------------
@@ -264,6 +343,8 @@ def main():
     print("[모드 선택]\n")
     print("1. 사용자 입력 (3x3)")
     print("2. data.json 분석")
+    print("3. [보너스] 2차원 vs 1차원 배열 성능 비교")
+    print("4. [보너스] 패턴 생성기 (N x N)")
     while True:
         choice = input("선택: ").strip()
         if choice == "1":
@@ -272,7 +353,13 @@ def main():
         if choice == "2":
             run_mode2()
             break
-        print("1 또는 2를 입력하세요.")
+        if choice == "3":
+            run_bonus_compare()
+            break
+        if choice == "4":
+            run_bonus_generator()
+            break
+        print("1~4 중에서 입력하세요.")
 
 
 if __name__ == "__main__":
