@@ -1,0 +1,35 @@
+{
+    "quizzes": [
+        {
+            "question": "Python 언어를 만든 사람은?",
+            "choices": ["귀도 반 로섬", "리누스 토르발즈", "비야네 스트롭스트룹", "제임스 고슬링"],
+            "answer": 1
+        },
+        {
+            "question": "리스트의 맨 끝에 값을 추가하는 메서드는?",
+            "choices": ["add()", "append()", "push()", "insert_last()"],
+            "answer": 2
+        },
+        {
+            "question": "'이름: 값' 형태의 쌍으로 데이터를 저장하는 자료형은?",
+            "choices": ["list", "tuple", "dict", "set"],
+            "answer": 3
+        },
+        {
+            "question": "클래스로 객체를 만들 때 자동으로 호출되는 메서드는?",
+            "choices": ["__start__", "__new_obj__", "__init__", "__main__"],
+            "answer": 3
+        },
+        {
+            "question": "내 컴퓨터의 커밋을 GitHub 같은 원격 저장소에 올리는 명령어는?",
+            "choices": ["git pull", "git push", "git clone", "git merge"],
+            "answer": 2
+        },
+        {
+            "question": "print(type(3.14)) 를 실행하면 나오는 자료형은?",
+            "choices": ["<class 'int'>", "<class 'float'>", "<class 'str'>", "<class 'bool'>"],
+            "answer": 2
+        }
+    ],
+    "best_score": null
+}
